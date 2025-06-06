@@ -1,5 +1,8 @@
 const express = require('express');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
+const cors = require('cors');
+
+
 const axios = require('axios');
 const app = express();
 const port = 3000;
@@ -7,10 +10,11 @@ const port = 3000;
 const url = 'mongodb://localhost:27017';
 const dbName = 'Duolingo';
 
+app.use(cors());
 app.use(express.json());
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -27,11 +31,10 @@ MongoClient.connect(url, { useNewUrlParser: true, useUnifiedTopology: true })
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Proxy route for AI suggestions (/api/grok3)
-app.all('/api/grok3', async (req, res) => {
+app.post('/api/grok3', async (req, res) => {
   try {
-    const targetUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent';
+    const targetUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
     console.log(`Forwarding request: ${req.method} ${targetUrl}`);
-    console.log('Incoming request headers:', JSON.stringify(req.headers, null, 2));
     console.log('Request body:', req.body);
 
     const authHeader = req.headers['authorization'] || req.headers['Authorization'];
@@ -39,9 +42,8 @@ app.all('/api/grok3', async (req, res) => {
       console.error('No Authorization header found in the request');
       return res.status(400).json({ error: 'Missing Authorization header' });
     }
-    console.log('Found Authorization header:', authHeader);
-
     const apiKey = authHeader.replace('Bearer ', '');
+
     const response = await axios({
       method: 'POST',
       url: `${targetUrl}?key=${apiKey}`,
@@ -49,13 +51,11 @@ app.all('/api/grok3', async (req, res) => {
         'Content-Type': 'application/json',
       },
       data: {
-        contents: [
-          {
-            parts: [
-              { text: req.body.messages[0].content },
-            ],
-          },
-        ],
+        contents: req.body.contents,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 100,
+        },
       },
       timeout: 10000,
     });
@@ -82,81 +82,55 @@ app.all('/api/grok3', async (req, res) => {
   }
 });
 
-// Placeholder routes for other endpoints
-app.get('/api/ai-suggestion', (req, res) => {
-  res.status(501).json({ error: 'Not implemented' });
-});
+// Endpoint to save quiz progress
+app.post('/api/progress', async (req, res) => {
+  console.log('Received POST /api/progress:', req.body);
+  try {
+    if (!db) throw new Error('Database not connected');
+    const { userId, language, quizData } = req.body;
+    if (!userId || !language || !quizData) {
+      return res.status(400).json({ error: 'Missing required fields: userId, language, quizData' });
+    }
 
-app.get('/api/daily-words', (req, res) => {
-  res.status(501).json({ error: 'Not implemented' });
-});
+    const progress = {
+      userId,
+      language,
+      quizData,
+      timestamp: new Date(),
+    };
 
-app.get('/api/exercises', (req, res) => {
-  res.status(501).json({ error: 'Not implemented' });
-});
-
-app.get('/api/dialogues', (req, res) => {
-  res.status(501).json({ error: 'Not implemented' });
-});
-
-// Existing MongoDB routes remain unchanged
-app.post('/api/saveQuizProgress', (req, res) => {
-  const { userId, language, score, total, date } = req.body;
-  if (!userId || !language || score == null || total == null || !date) {
-    return res.status(400).send('Missing required fields');
+    const result = await db.collection('progress').insertOne(progress);
+    console.log('Progress saved:', result.insertedId);
+    res.status(201).json({ message: 'Progress saved', id: result.insertedId });
+  } catch (error) {
+    console.error('Error saving progress:', error.message);
+    res.status(500).json({ error: 'Failed to save progress', details: error.message });
   }
-  db.collection('quiz_progress').insertOne({ userId, language, score, total, date })
-    .then(result => res.status(200).send('Progress saved'))
-    .catch(err => res.status(500).send('Error saving progress: ' + err));
 });
 
-app.get('/api/getQuizProgress/:userId', (req, res) => {
-  const userId = req.params.userId;
-  if (!userId) {
-    return res.status(400).send('Missing userId');
+// Endpoint to get progress
+app.get('/api/progress/:userId/:language', async (req, res) => {
+  console.log(`Received GET /api/progress/${req.params.userId}/${req.params.language}`);
+  try {
+    if (!db) throw new Error('Database not connected');
+    const { userId, language } = req.params;
+    if (!userId || !language) {
+      return res.status(400).json({ error: 'Missing userId or language' });
+    }
+
+    const progress = await db.collection('progress')
+      .find({ userId, language })
+      .sort({ timestamp: -1 })
+      .toArray();
+    if (!progress.length) {
+      return res.status(404).json({ message: 'No progress found' });
+    }
+    console.log('Progress retrieved:', progress);
+    res.status(200).json(progress);
+  } catch (error) {
+    console.error('Error retrieving progress:', error.message);
+    res.status(500).json({ error: 'Failed to retrieve progress', details: error.message });
   }
-  db.collection('quiz_progress').find({ userId }).toArray()
-    .then(result => res.status(200).json(result))
-    .catch(err => res.status(500).send('Error fetching progress: ' + err));
-});
-
-app.get('/api/getAssignments', (req, res) => {
-  db.collection('assignments').find().toArray()
-    .then(result => res.status(200).json(result))
-    .catch(err => res.status(500).send('Error fetching assignments: ' + err));
-});
-
-app.post('/api/insertSampleAssignments', (req, res) => {
-  db.collection('assignments').countDocuments()
-    .then(count => {
-      if (count === 0) {
-        return db.collection('assignments').insertMany([
-          {
-            title: 'Practice Greetings in Arabic',
-            description: 'Learn and practice 5 common greetings in Arabic.',
-            dueDate: new Date('2025-06-05T00:00:00.000Z'),
-          },
-          {
-            title: 'Urdu Vocabulary Quiz',
-            description: 'Complete a quiz on 10 Urdu vocabulary words.',
-            dueDate: new Date('2025-06-10T00:00:00.000Z'),
-          },
-        ]);
-      }
-      return Promise.resolve();
-    })
-    .then(() => res.status(200).send('Sample assignments inserted or already exist'))
-    .catch(err => res.status(500).send('Error inserting sample assignments: ' + err));
-});
-
-app.post('/api/saveAssignment', (req, res) => {
-  const { title, description, dueDate } = req.body;
-  if (!title || !description || !dueDate) {
-    return res.status(400).send('Missing required fields');
-  }
-  db.collection('assignments').insertOne({ title, description, dueDate })
-    .then(result => res.status(200).send('Assignment saved'))
-    .catch(err => res.status(500).send('Error saving assignment: ' + err));
 });
 
 app.listen(port, () => {

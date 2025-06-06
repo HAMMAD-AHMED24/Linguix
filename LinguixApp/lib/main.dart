@@ -79,8 +79,16 @@ class MyApp extends StatelessWidget {
           '/learning': (context) => const LearningScreen(),
           '/speech-translation': (context) => const SpeechTranslationScreen(),
           '/ar_mode': (context) => const ARModeScreen(),
-          '/progress': (context) => const ProgressScreen(),
           '/profile': (context) => const ProfileScreen(),
+          '/progress': (context) {
+            final languageProvider = Provider.of<LanguageProvider>(
+                context, listen: false);
+            final language = languageProvider.targetLanguage ??
+                'en'; // Default to 'en' if null
+            const userId = 'guest_user'; // Static for now; can be dynamic if user auth is added
+            return ProgressScreen(userId: userId, language: language);
+          }
+
 
         },
       ),

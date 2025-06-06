@@ -114,9 +114,161 @@ class LanguageProvider with ChangeNotifier {
     'Greetings & Introductions': [
       'Hello / Hi',
       'Good morning',
-      // ... (all phrases as in your code)
+      'Good afternoon',
+      'Good evening',
+      'Goodbye / Bye',
+      'How are you?',
+      'I\'m fine, thank you.',
+      'What\'s your name?',
+      'My name is...',
+      'Nice to meet you.',
+      'Where are you from?',
+      'I\'m from...',
     ],
-    // ... (other categories unchanged)
+    'Everyday Basics': [
+      'Yes / No',
+      'Please',
+      'Thank you',
+      'You\'re welcome',
+      'Excuse me',
+      'Sorry',
+      'I don\'t understand.',
+      'Can you help me?',
+      'How much is this?',
+      'What time is it?',
+    ],
+    'Making Plans': [
+      'What are you doing?',
+      'Do you want to go out?',
+      'Let\'s meet at...',
+      'When are you free?',
+      'See you soon!',
+      'I’m running late.',
+      'I’ll be there in 10 minutes.',
+    ],
+    'Shopping & Eating': [
+      'I’m just looking, thank you.',
+      'I’ll take this one.',
+      'Do you have this in a different size?',
+      'I’m hungry / thirsty.',
+      'Can I see the menu?',
+      'I’d like to order...',
+      'Could I have the bill, please?',
+    ],
+    'Asking for Help': [
+      'Where is the bathroom?',
+      'I’m lost.',
+      'Can you speak slowly?',
+      'What does this mean?',
+      'How do you say ___ in English?',
+      'Is there Wi-Fi here?',
+    ],
+    'Expressing Opinions & Feelings': [
+      'In my opinion...',
+      'I agree with you.',
+      'I don’t think so.',
+      'That sounds great.',
+      'I’m not sure about that.',
+      'It depends.',
+      'I’m really excited / worried / confused.',
+    ],
+    'Professional & Academic Use': [
+      'I’d like to schedule a meeting.',
+      'Can you send me an email?',
+      'Let’s discuss this in detail.',
+      'I’ll get back to you.',
+      'I appreciate your feedback.',
+      'Please let me know if you have any questions.',
+    ],
+    'Travel & Emergencies': [
+      'I need a doctor.',
+      'I lost my passport.',
+      'Where is the nearest hospital?',
+      'Can you call the police?',
+      'I missed my flight.',
+      'I need to make a reservation.',
+    ],
+    'Useful Sentence Starters & Fillers': [
+      'I think that...',
+      'To be honest...',
+      'You know...',
+      'By the way...',
+      'As far as I know...',
+      'To sum up...',
+      'Let me think...',
+    ],
+    'Travel & Directions': [
+      'Where is the train station?',
+      'How far is it from here?',
+      'Can you show me on the map?',
+      'Turn left / right.',
+      'Go straight ahead.',
+      'Is it within walking distance?',
+    ],
+    'Food & Dining': [
+      'I’m allergic to...',
+      'Is this spicy?',
+      'Can you make it quick?',
+      'I’d like it to go.',
+      'Does this have meat in it?',
+      'Can I have some water, please?',
+    ],
+    'Shopping': [
+      'Can I try this on?',
+      'Do you accept credit cards?',
+      'Is there a discount?',
+      'Can you wrap it as a gift?',
+      'I need a receipt.',
+      'Can I return this?',
+    ],
+    'Work & Business': [
+      'I have a question about...',
+      'Can we reschedule?',
+      'What’s the deadline?',
+      'I need more time.',
+      'Let’s set a goal.',
+      'Can you explain that again?',
+    ],
+    'Feelings & Emotions': [
+      'I feel happy / sad.',
+      'I’m tired.',
+      'I’m nervous.',
+      'I’m disappointed.',
+      'I’m proud of you.',
+      'I miss you.',
+    ],
+    'Emergencies': [
+      'Help me!',
+      'There’s a fire!',
+      'I’m injured.',
+      'I need an ambulance.',
+      'I’ve been robbed.',
+      'It’s an emergency!',
+    ],
+    'Making Friends': [
+      'Do you like to...?',
+      'What’s your favorite...?',
+      'Let’s hang out sometime.',
+      'Can I have your number?',
+      'What do you do for fun?',
+      'I’d love to get to know you.',
+    ],
+    'Daily Routine': [
+      'I wake up at...',
+      'I go to work / school.',
+      'I eat breakfast / lunch / dinner.',
+      'I take a shower.',
+      'I go to bed at...',
+      'I usually...',
+    ],
+    'Talking About the Past/Future': [
+      'Yesterday, I...',
+      'Last week, I...',
+      'When I was a child...',
+      'Tomorrow, I will...',
+      'Next year, I plan to...',
+      'I hope to...',
+    ],
   };
 
   Future<void> fetchTranslations({required String category}) async {
@@ -520,5 +672,24 @@ class LanguageProvider with ChangeNotifier {
   set currentStage(int value) {
     _currentStage = value;
     notifyListeners();
+  }
+  // New method to save quiz progress
+  Future<void> saveQuizProgress(String userId, String language, Map<String, dynamic> quizData) async {
+    try {
+      final response = await http.post(
+        Uri.parse('http://localhost:3000/api/progress'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'userId': userId,
+          'language': language,
+          'quizData': quizData,
+        }),
+      );
+      if (response.statusCode != 201) {
+        throw Exception('Failed to save progress: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Error saving quiz progress: $e');
+    }
   }
 }
