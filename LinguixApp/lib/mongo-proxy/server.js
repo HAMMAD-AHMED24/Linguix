@@ -1,8 +1,6 @@
 const express = require('express');
 const { MongoClient, ObjectId } = require('mongodb');
 const cors = require('cors');
-
-
 const axios = require('axios');
 const app = express();
 const port = 3000;
@@ -26,20 +24,20 @@ let db;
 MongoClient.connect(url, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(client => {
     db = client.db(dbName);
-    console.log('Connected to MongoDB');
+    console.log('Connected to MongoDB at', new Date().toISOString(), 'PKT');
   })
-  .catch(err => console.error('MongoDB connection error:', err));
+  .catch(err => console.error('MongoDB connection error at', new Date().toISOString(), 'PKT:', err));
 
 // Proxy route for AI suggestions (/api/grok3)
 app.post('/api/grok3', async (req, res) => {
   try {
-    const targetUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
-    console.log(`Forwarding request: ${req.method} ${targetUrl}`);
+    const targetUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent'; // Updated to valid model
+    console.log(`Forwarding request at ${new Date().toISOString()} PKT: ${req.method} ${targetUrl}`);
     console.log('Request body:', req.body);
 
     const authHeader = req.headers['authorization'] || req.headers['Authorization'];
     if (!authHeader) {
-      console.error('No Authorization header found in the request');
+      console.error('No Authorization header found at', new Date().toISOString(), 'PKT');
       return res.status(400).json({ error: 'Missing Authorization header' });
     }
     const apiKey = authHeader.replace('Bearer ', '');
@@ -54,27 +52,33 @@ app.post('/api/grok3', async (req, res) => {
         contents: req.body.contents,
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 100,
+          maxOutputTokens: 2048, // Increased to handle 12 questions with options
         },
       },
-      timeout: 10000,
+      timeout: 30000, // Increased to 30 seconds
     });
 
-    console.log('Response status:', response.status);
-    console.log('Response data:', response.data);
+    console.log('Response status at', new Date().toISOString(), 'PKT:', response.status);
+    console.log('Response data at', new Date().toISOString(), 'PKT:', response.data);
+
+    // Adjust response format to match expected JSON structure
+    const generatedText = response.data.candidates[0].content.parts[0].text;
+    const jsonString = generatedText.replace(/```json\n|```/g, '').trim();
+    const quizData = JSON.parse(jsonString);
+
     res.status(response.status).json({
       choices: [
         {
           message: {
             role: 'assistant',
-            content: response.data.candidates[0].content.parts[0].text,
+            content: generatedText,
           },
         },
       ],
     });
   } catch (error) {
-    console.error('Proxy error:', error.message);
-    console.error('Error response:', error.response?.status, error.response?.data);
+    console.error('Proxy error at', new Date().toISOString(), 'PKT:', error.message);
+    console.error('Error response at', new Date().toISOString(), 'PKT:', error.response?.status, error.response?.data);
     res.status(error.response?.status || 500).json({
       error: error.message,
       details: error.response?.data || 'No additional details',
@@ -84,7 +88,7 @@ app.post('/api/grok3', async (req, res) => {
 
 // Endpoint to save quiz progress
 app.post('/api/progress', async (req, res) => {
-  console.log('Received POST /api/progress:', req.body);
+  console.log('Received POST /api/progress at', new Date().toISOString(), 'PKT:', req.body);
   try {
     if (!db) throw new Error('Database not connected');
     const { userId, language, quizData } = req.body;
@@ -100,17 +104,17 @@ app.post('/api/progress', async (req, res) => {
     };
 
     const result = await db.collection('progress').insertOne(progress);
-    console.log('Progress saved:', result.insertedId);
+    console.log('Progress saved at', new Date().toISOString(), 'PKT:', result.insertedId);
     res.status(201).json({ message: 'Progress saved', id: result.insertedId });
   } catch (error) {
-    console.error('Error saving progress:', error.message);
+    console.error('Error saving progress at', new Date().toISOString(), 'PKT:', error.message);
     res.status(500).json({ error: 'Failed to save progress', details: error.message });
   }
 });
 
 // Endpoint to get progress
 app.get('/api/progress/:userId/:language', async (req, res) => {
-  console.log(`Received GET /api/progress/${req.params.userId}/${req.params.language}`);
+  console.log(`Received GET /api/progress/${req.params.userId}/${req.params.language} at`, new Date().toISOString(), 'PKT');
   try {
     if (!db) throw new Error('Database not connected');
     const { userId, language } = req.params;
@@ -125,14 +129,14 @@ app.get('/api/progress/:userId/:language', async (req, res) => {
     if (!progress.length) {
       return res.status(404).json({ message: 'No progress found' });
     }
-    console.log('Progress retrieved:', progress);
+    console.log('Progress retrieved at', new Date().toISOString(), 'PKT:', progress);
     res.status(200).json(progress);
   } catch (error) {
-    console.error('Error retrieving progress:', error.message);
+    console.error('Error retrieving progress at', new Date().toISOString(), 'PKT:', error.message);
     res.status(500).json({ error: 'Failed to retrieve progress', details: error.message });
   }
 });
 
 app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`Server running on http://localhost:${port} at`, new Date().toISOString(), 'PKT');
 });

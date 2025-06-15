@@ -61,7 +61,7 @@ class _LearningScreenState extends State<LearningScreen> {
             icon: const Icon(Icons.quiz),
             color: AppTheme.accentTeal,
             onPressed: () async {
-              await languageProvider.fetchQuizzes();
+              await languageProvider.fetchAIQuizzes();
               Navigator.pushNamed(context, '/quiz');
             },
             tooltip: 'Take Quiz',

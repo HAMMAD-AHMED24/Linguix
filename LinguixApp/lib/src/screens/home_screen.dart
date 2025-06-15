@@ -367,8 +367,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         return;
                       }
                       try {
-                        await languageProvider.fetchTranslations(category: 'Greetings & Introductions');
-                        await languageProvider.fetchQuizzes();
+                        languageProvider.setSelectedCategory('Greetings & Introductions');
+                        await languageProvider.fetchAIQuizzes();
+                        if (languageProvider.quizzes.isEmpty) {
+                          throw Exception('No quizzes generated');
+                        }
                         if (mounted) {
                           Navigator.pushNamed(context, '/quiz');
                         }
@@ -430,6 +433,5 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-
   }
 }

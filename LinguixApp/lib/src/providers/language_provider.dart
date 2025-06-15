@@ -35,8 +35,8 @@ class LanguageProvider with ChangeNotifier {
   static const List<String> stages = ['Beginner', 'Intermediate', 'Advanced'];
 
   static const String _rapidApiKey = '1f62cf620emsh5709245bb21e4c3p1f9b6fjsnf3a9f0ff2bc6';
-  static const String _grokApiUrl = 'http://localhost:3000/api/grok3'; // Replace with actual xAI endpoint
-  static const String _grokApiKey = 'xai-RpEgpahvj6Iv07YAm0fncwTll82tdWPhq8t2vgc824FWwdMF3kKjcyzWiRyjTvHeSNXtQQ6L402l1pS1'; // Obtain from https://x.ai/api
+  static const String _grokApiUrl = 'http://localhost:3000/api/grok3';
+  static const String _grokApiKey = 'AIzaSyBERWxAHYLsgMgdvD2TO9S1OTHRIExBImo';
 
   LanguageProvider() {
     _initTts();
@@ -110,7 +110,6 @@ class LanguageProvider with ChangeNotifier {
   }
 
   static const Map<String, List<String>> phraseCategories = {
-    // Same as provided, unchanged for brevity
     'Greetings & Introductions': [
       'Hello / Hi',
       'Good morning',
@@ -337,38 +336,108 @@ class LanguageProvider with ChangeNotifier {
     }
   }
 
-  Future<void> fetchQuizzes() async {
-    if (translations.isEmpty) {
-      _errorMessage = 'No translations available to create quizzes';
+  Future<void> fetchAIQuizzes() async {
+    if (_targetLanguage == null || _selectedCategory == null) {
+      _errorMessage = 'Please select a target language and category first';
       notifyListeners();
       throw Exception(_errorMessage);
     }
 
     isLoading = true;
+    _errorMessage = null;
     quizzes.clear();
     notifyListeners();
 
-    for (var translation in translations) {
-      final correctAnswer = translation.translation;
-      final options = [correctAnswer];
-      final otherTranslations = translations.where((t) => t.translation != correctAnswer).toList();
-      otherTranslations.shuffle();
-      options.addAll(otherTranslations.take(3).map((t) => t.translation));
-      options.shuffle();
-
-      quizzes.add(
-        Quiz(
-          question: 'What is "${translation.query}" in $_targetLanguage?',
-          options: options,
-          correct: correctAnswer,
-          category: translation.category ?? _selectedCategory ?? 'Unknown',
-        ),
+    try {
+      _requestCount++;
+      // Add a unique timestamp to ensure a fresh request
+      final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+      final response = await http.post(
+        Uri.parse('$_grokApiUrl?ts=$timestamp'), // Append timestamp to URL
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_grokApiKey',
+          'Cache-Control': 'no-cache', // Prevent caching
+        },
+        body: jsonEncode({
+          'contents': [
+            {
+              'parts': [
+                {
+                  'text':
+                  'Generate 12 unique quiz questions for learning $_targetLanguage. Each question should ask for the translation of a different random English word or sentence into $_targetLanguage, with 4 options (1 correct, 3 incorrect). Ensure questions are distinct from any previously generated questions. Return the response in JSON format as an array of objects, each with "question" (string), "options" (array of 4 strings), and "correct" (string) fields.'
+                }
+              ]
+            }
+          ],
+          'generationConfig': {
+            'temperature': 0.9, // Increased for more randomness
+            'maxOutputTokens': 2048,
+          },
+        }),
       );
-    }
 
-    isLoading = false;
-    notifyListeners();
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['choices'] == null || data['choices'].isEmpty) {
+          _errorMessage = 'Invalid API response: No choices found';
+          throw Exception(_errorMessage);
+        }
+        String content = data['choices'][0]['message']['content'];
+        content = content.replaceAll(RegExp(r'```json\n|```'), '').trim();
+
+        final quizData = jsonDecode(content) as List<dynamic>;
+
+        if (quizData.length < 12) {
+          _errorMessage = 'Incomplete quiz data received (got ${quizData.length} questions)';
+          throw Exception(_errorMessage);
+        }
+
+        for (var item in quizData) {
+          if (item['question'] == null ||
+              item['options'] == null ||
+              item['correct'] == null) {
+            _errorMessage = 'Malformed quiz data: Missing required fields';
+            throw Exception(_errorMessage);
+          }
+          if (item['options'].length != 4) {
+            _errorMessage = 'Malformed quiz data: Options array must have exactly 4 items';
+            throw Exception(_errorMessage);
+          }
+          if (!item['options'].contains(item['correct'])) {
+            _errorMessage = 'Malformed quiz data: Correct answer not in options';
+            throw Exception(_errorMessage);
+          }
+        }
+
+        quizzes = quizData.map((item) {
+          return Quiz(
+            question: item['question'].toString(),
+            options: List<String>.from(item['options']),
+            correct: item['correct'].toString(),
+            category: _selectedCategory!,
+          );
+        }).toList();
+
+        // Log for debugging
+        print('Fetched ${quizzes.length} new quiz questions');
+      } else if (response.statusCode == 429) {
+        _errorMessage = 'Rate limit exceeded. Please try again later.';
+        throw Exception(_errorMessage);
+      } else {
+        _errorMessage = 'Failed to fetch AI quizzes: ${response.statusCode} - ${response.body}';
+        throw Exception(_errorMessage);
+      }
+    } catch (e) {
+      _errorMessage = 'Error fetching AI quizzes: $e';
+      throw Exception(_errorMessage);
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
   }
+
+
 
   Future<void> fetchQuizForWord(String language, String word) async {
     if (language != _targetLanguage) {
@@ -392,16 +461,29 @@ class LanguageProvider with ChangeNotifier {
           'Authorization': 'Bearer $_grokApiKey',
         },
         body: jsonEncode({
-          'prompt': 'Generate a translation pair for the word "$word" from English to $language, and 3 incorrect translations as distractors. Return JSON: {"query": "English word", "translation": "Translated word", "distractors": ["wrong1", "wrong2", "wrong3"]}',
-          'max_tokens': 100,
+          'contents': [
+            {
+              'parts': [
+                {
+                  'text': 'Generate a translation pair for the word "$word" from English to $language, and 3 incorrect translations as distractors. Return JSON: {"query": "English word", "translation": "Translated word", "distractors": ["wrong1", "wrong2", "wrong3"]}',
+                }
+              ]
+            }
+          ],
+          'generationConfig': {
+            'temperature': 0.7,
+            'maxOutputTokens': 100,
+          },
         }),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final query = data['choices'][0]['text']['query'] ?? word;
-        final translation = data['choices'][0]['text']['translation'] ?? word;
-        final distractors = List<String>.from(data['choices'][0]['text']['distractors'] ?? []);
+        final content = data['choices'][0]['message']['content'];
+        final quizData = jsonDecode(content.replaceAll(RegExp(r'```json\n|```'), '').trim());
+        final query = quizData['query'] ?? word;
+        final translation = quizData['translation'] ?? word;
+        final distractors = List<String>.from(quizData['distractors'] ?? []);
 
         translations.add(
           Language(
@@ -522,12 +604,10 @@ class LanguageProvider with ChangeNotifier {
       return null;
     }
 
-    // Log available locales (returns List<LocaleName>)
-    List<stt.LocaleName> locales = await _speechToText.locales(); // Await the future
+    List<stt.LocaleName> locales = await _speechToText.locales();
     print('Available locales: ${locales.map((l) => l.localeId).toList()}');
     print('Using locale: $_targetLanguage');
 
-    // Fallback to en-US if the target language isn’t supported
     String localeToUse = _targetLanguage ?? 'en-US';
     if (!locales.any((locale) => locale.localeId == localeToUse)) {
       print('Locale $localeToUse not supported, falling back to en-US');
@@ -544,7 +624,7 @@ class LanguageProvider with ChangeNotifier {
       localeId: localeToUse,
       listenFor: const Duration(seconds: 10),
       cancelOnError: true,
-      partialResults: true, // Enable partial results for web
+      partialResults: true,
     );
 
     if (!isListening) {
@@ -593,6 +673,12 @@ class LanguageProvider with ChangeNotifier {
 
     _selectedCategory = stage;
     final queries = _getStagePhrases(stage);
+
+    if (queries.isEmpty) {
+      _errorMessage = 'No phrases available for stage: $stage';
+      notifyListeners();
+      throw Exception(_errorMessage);
+    }
 
     isLoading = true;
     _errorMessage = null;
@@ -663,17 +749,16 @@ class LanguageProvider with ChangeNotifier {
     }
     _stageProgress[stage] = _stageProgress[stage]! + (isCorrect ? 1 : 0);
     if (_stageProgress[stage]! >= 5) {
-      _currentStage = min(_currentStage + 1, stages.length - 1); // Using min from dart:math
+      _currentStage = min(_currentStage + 1, stages.length - 1);
     }
     notifyListeners();
   }
 
-  // Setter for currentStage (optional, if needed externally)
   set currentStage(int value) {
     _currentStage = value;
     notifyListeners();
   }
-  // New method to save quiz progress
+
   Future<void> saveQuizProgress(String userId, String language, Map<String, dynamic> quizData) async {
     try {
       final response = await http.post(
@@ -683,6 +768,7 @@ class LanguageProvider with ChangeNotifier {
           'userId': userId,
           'language': language,
           'quizData': quizData,
+          'timestamp': DateTime.now().toIso8601String(),
         }),
       );
       if (response.statusCode != 201) {
